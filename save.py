@@ -2,17 +2,19 @@ import tensorflow as tf
 import numpy as np
 import os
 from utils import eprint, listdir_files, reset_random, create_session, BatchPNG
-from input import inputs, input_arguments
+from data import get_data, data_arguments
 
 class Save:
     def __init__(self, config):
         self.dataset = None
         self.save_dir = None
         self.training = None
+        self.testing = None
         self.num_epochs = None
         self.max_steps = None
         self.random_seed = None
         self.batch_size = None
+        self.dtype = None
         # copy all the properties from config object
         self.config = config
         self.__dict__.update(config.__dict__)
@@ -22,7 +24,8 @@ class Save:
         if os.path.exists(self.save_dir):
             eprint('Confirm removing {}\n[Y/n]'.format(self.save_dir))
             if input() != 'Y':
-                exit
+                import sys
+                sys.exit()
             import shutil
             shutil.rmtree(self.save_dir)
             eprint('Removed: ' + self.save_dir)
@@ -51,12 +54,12 @@ class Save:
         eprint('data set: {}\nepoch steps: {}\nnum epochs: {}\nmax steps: {}\n'
             .format(len(self.files), self.epoch_steps, self.num_epochs, self.max_steps))
     
-    def build_input(self):
+    def build_graph(self):
         with tf.device('/cpu:0'):
-            self.inputs, self.labels = inputs(
-                self.config, self.files, is_training=self.training)
+            self.inputs, self.labels = get_data(self.config, self.files,
+                is_training=self.training, is_testing=self.testing)
     
-    def save(self, sess):
+    def run(self, sess):
         epoch_len = len(str(self.num_epochs - 1))
         step_len = len(str(self.epoch_steps - 1))
         for epoch in range(self.num_epochs):
@@ -70,6 +73,16 @@ class Save:
                 if self.batch_size == 1:
                     ret_inputs = ret_inputs[0]
                     ret_labels = ret_labels[0]
+                # convert dtype
+                if self.dtype == np.uint8:
+                    ret_inputs *= 255
+                    ret_labels *= 255
+                elif self.dtype == np.uint16:
+                    ret_inputs *= 65535
+                    ret_labels *= 65535
+                if self.dtype != np.float32:
+                    ret_inputs = ret_inputs.astype(self.dtype)
+                    ret_labels = ret_labels.astype(self.dtype)
                 # save to compressed npz file
                 ofile = os.path.join(save_dir, '{:0>{step_len}}'
                     .format(step, step_len=step_len))
@@ -79,9 +92,9 @@ class Save:
         self.initialize()
         self.get_dataset()
         with tf.Graph().as_default():
-            self.build_input()
+            self.build_graph()
             with create_session() as sess:
-                self.save(sess)
+                self.run(sess)
 
 def main(argv=None):
     # arguments parsing
@@ -91,25 +104,26 @@ def main(argv=None):
     argp.add_argument('dataset')
     argp.add_argument('save_dir')
     argp.add_argument('--training', action='store_true')
-    argp.add_argument('--num-epochs', type=int, default=32)
+    argp.add_argument('--testing', action='store_true')
+    argp.add_argument('--num-epochs', type=int, default=1)
     argp.add_argument('--max-steps', type=int)
     argp.add_argument('--random-seed', type=int)
     argp.add_argument('--batch-size', type=int, default=1)
     # data parameters
-    argp.add_argument('--dtype', type=int, default=2)
+    argp.add_argument('--dtype', type=int, default=3)
     argp.add_argument('--data-format', default='NCHW')
     argp.add_argument('--patch-height', type=int, default=128)
     argp.add_argument('--patch-width', type=int, default=128)
     argp.add_argument('--in-channels', type=int, default=3)
     argp.add_argument('--out-channels', type=int, default=3)
     # pre-processing parameters
-    input_arguments(argp)
+    data_arguments(argp)
     # model parameters
     argp.add_argument('--scaling', type=int, default=1)
     # parse
     args = argp.parse_args(argv)
-    args.dtype = [tf.int8, tf.float16, tf.float32, tf.float64][args.dtype]
-    # run saving
+    args.dtype = [np.uint8, np.uint16, np.float16, np.float32, np.float64][args.dtype]
+    # save dataset
     save = Save(args)
     save()
 

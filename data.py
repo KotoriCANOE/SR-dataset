@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 
-def input_arguments(argp):
+def data_arguments(argp):
     # pre-processing parameters
     argp.add_argument('--threads', type=int, default=16)
     argp.add_argument('--threads-py', type=int, default=16)
@@ -14,13 +14,13 @@ def input_arguments(argp):
     argp.add_argument('--noise-corr', type=float, default=0.75)
     argp.add_argument('--jpeg-coding', type=float, default=2.0)
 
-def inputs(config, files, is_training=False, is_testing=False):
+def get_data(config, files, is_training=False, is_testing=False):
     # parameters
     channels = config.in_channels
     threads = config.threads
     threads_py = config.threads_py
     scaling = config.scaling
-    if is_training: num_epochs = config.num_epochs
+    num_epochs = config.num_epochs
     data_format = config.data_format
     patch_height = config.patch_height
     patch_width = config.patch_width
@@ -473,17 +473,17 @@ def inputs(config, files, is_training=False, is_testing=False):
                           num_parallel_calls=1 if is_testing else threads_py)
     dataset = dataset.map(parse3_func, num_parallel_calls=1 if is_testing else threads)
     dataset = dataset.batch(batch_size)
-    dataset = dataset.repeat(num_epochs if is_training else None)
+    dataset = dataset.repeat(num_epochs)
     dataset = dataset.prefetch(64)
     
     # return iterator
     iterator = dataset.make_one_shot_iterator()
-    next_data, next_label = iterator.get_next()
+    next_inputs, next_labels = iterator.get_next()
     
     # data shape declaration
     data_shape = [None] * 4
     data_shape[-3 if data_format == 'NCHW' else -1] = channels
-    next_data.set_shape(data_shape)
-    next_label.set_shape(data_shape)
+    next_inputs.set_shape(data_shape)
+    next_labels.set_shape(data_shape)
     
-    return next_data, next_label
+    return next_inputs, next_labels
